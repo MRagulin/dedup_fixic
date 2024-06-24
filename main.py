@@ -41,7 +41,7 @@ max = 2
 
 HASH_CODE = 2
 CREATED = 3
-
+SKIP_REMOVE = False
 
 def check_if_hash_exists(hash, buffer):
   for el in buffer:
@@ -84,7 +84,11 @@ with connect(dbname=DB, user=DB_USER, password=DB_PASSWORD, host=DB_HOST) as con
         if len(list(vulners)) > 0:
                  remove_list = make_dedup(list(vulners))
                  all_items_pre_request = len(remove_list)
-
+        if SKIP_REMOVE:
+            print('------Duplicates for host: {}----------------'.format(host))
+            for vul in vulners:
+                print(vul)
+            continue
         if all_items_pre_request > 0: #all find problems
             for idx, el in enumerate(remove_list):
                  cnt += 1 #total write in db

@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from psycopg2 import connect
 from dotenv import load_dotenv
 from os import environ
@@ -69,36 +70,39 @@ def make_request(conn, request):
             records = None
         return records
 
+def dedup_init():
+    with connect(dbname=DB, user=DB_USER, password=DB_PASSWORD, host=DB_HOST) as conn:
+        need_dedup = []
+        remove_ids = []
+        print('+ Запрашиваем данные по уязвимым хостам')
+        max_items_pre_request = 5 #fix problem execute more items per one request in UPDATE
+        all_items_pre_request = 0
+        cnt = 0
+        hosts = make_request(conn, GET_HOSTS)
+        for el in tqdm(hosts):
+            host = el[0]
+            vulners = make_request(conn, GET_VULNS.format(host))
+            if len(list(vulners)) > 0:
+                     remove_list = make_dedup(list(vulners))
+                     all_items_pre_request = len(remove_list)
+            if SKIP_REMOVE:
+                print('------Duplicates for host: {}----------------'.format(host))
+                for vul in vulners:
+                    print(vul)
+                continue
+            if all_items_pre_request > 0: #all find problems
+                for idx, el in enumerate(remove_list):
+                     cnt += 1 #total write in db
+                     remove_ids.append(str(el[0])) #temp buffer for remove
+                     if len(remove_ids) >= max_items_pre_request or all_items_pre_request == cnt:
+                         ids_string = ', '.join(remove_ids)
+                         #print('Will disable {} vulnarabilities'.format(cnt))
+                         #print(SET_DUPLICATES.format(ids_string))
 
-with connect(dbname=DB, user=DB_USER, password=DB_PASSWORD, host=DB_HOST) as conn:
-    need_dedup = []
-    remove_ids = []
+                         dedupe_activity = make_request(conn, SET_DUPLICATES.format(ids_string))
+                         #print('[{}] Updated values: {}'.format(host, list(dedupe_activity)))
+                         remove_ids.clear()
+        print('+ Finish: remove {} duplicates.'.format(cnt))
 
-    max_items_pre_request = 5 #fix problem execute more items per one request in UPDATE
-    all_items_pre_request = 0
-    cnt = 0
-    hosts = make_request(conn, GET_HOSTS)
-    for el in tqdm(hosts):
-        host = el[0]
-        vulners = make_request(conn, GET_VULNS.format(host))
-        if len(list(vulners)) > 0:
-                 remove_list = make_dedup(list(vulners))
-                 all_items_pre_request = len(remove_list)
-        if SKIP_REMOVE:
-            print('------Duplicates for host: {}----------------'.format(host))
-            for vul in vulners:
-                print(vul)
-            continue
-        if all_items_pre_request > 0: #all find problems
-            for idx, el in enumerate(remove_list):
-                 cnt += 1 #total write in db
-                 remove_ids.append(str(el[0])) #temp buffer for remove
-                 if len(remove_ids) >= max_items_pre_request or all_items_pre_request == cnt:
-                     ids_string = ', '.join(remove_ids)
-                     #print('Will disable {} vulnarabilities'.format(cnt))
-                     #print(SET_DUPLICATES.format(ids_string))
-
-                     dedupe_activity = make_request(conn, SET_DUPLICATES.format(ids_string))
-                     #print('[{}] Updated values: {}'.format(host, list(dedupe_activity)))
-                     remove_ids.clear()
-    print('+ Finish: remove {} duplicates.'.format(cnt))
+if __name__ == "__main__":
+    dedup_init()
